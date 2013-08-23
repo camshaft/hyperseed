@@ -1,0 +1,62 @@
+#!/usr/bin/env node
+
+/**
+ * Module dependencies.
+ */
+
+var program = require('commander');
+
+// options
+
+program
+  .option('-g, --glob <pattern>', 'search a folder with a pattern', '**')
+  .option('-c, --copy', 'copy the files to the hashed filename')
+  .option('-p, --prefix [prefix]', 'prefix the output filename', '')
+  .option('-m, --mapping <file>', 'output of mapping', 'manifest.json');
+
+// parse
+
+program.parse(process.argv);
+
+// search for files
+
+var manifest = {};
+var batch = new Batch;
+
+glob(program.glob, function (err, files) {
+  if (err) exit(err);
+
+  files.forEach(function(file) {
+    batch.push(function(done) {
+      fs.stat(file, function(err, stat) {
+        if (err) return done(err);
+        if (!stat.isFile()) return done();
+
+        read(file, function(err, content) {
+          if (err) return done(err);
+          var md5 = crypto.createHash('md5');
+          md5.update(content);
+          var hash = md5.digest('hex');
+          var hashedFilename = [program.prefix, hash, '-', path.basename(file)].join('');
+          var hashedPath = path.join(path.dirname(file), hashedFilename);
+          manifest[file] = hashedPath;
+          if (!program.copy) return done();
+          write(hashedPath, content, done);
+        });
+      });
+    });
+  });
+
+  batch.end(function(err) {
+    if (err) exit(err);
+    write(program.mapping, JSON.stringify(manifest, null, '  '), function(err) {
+      if (err) exit(err);
+    });
+  });
+
+});
+
+function exit(err) {
+  console.error(err.stack || err.message);
+  process.exit(1);
+};
